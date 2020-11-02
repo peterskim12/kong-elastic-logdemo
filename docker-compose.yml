@@ -1,0 +1,66 @@
+version: "3.7"
+
+networks:
+  kong-net:
+    external: false
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.9.3
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms256m -Xmx256m"
+    ports:
+      - 9200:9200
+    networks:
+      - kong-net
+  
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.9.3
+    container_name: kibana
+    depends_on:
+      - elasticsearch
+    ports:
+      - 5601:5601
+    networks:
+      - kong-net
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:7.9.3
+    container_name: filebeat
+    user: root
+    depends_on:
+      - elasticsearch
+    command: ["--strict.perms=false"]
+    volumes:
+      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml
+      - ./elasticsearch_template.json:/usr/share/filebeat/elasticsearch_template.json
+    networks: 
+      - kong-net
+
+  kong:
+    image: "kong:latest"
+    container_name: kong
+    user: "kong"
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: "/usr/local/kong/kong.yml"
+    networks:
+      - kong-net
+    ports:
+      - "8000:8000/tcp"
+      - "8443:8443/tcp"
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    restart: on-failure
+    deploy:
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - ./kong.yml:/usr/local/kong/kong.yml
+
